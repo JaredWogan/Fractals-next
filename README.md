@@ -15,5 +15,3 @@ Updated versions of my fractal generators.
 
 ## Fractals Generated in the Julia Version
 ![J1](https://github.com/JaredWogan/Fractals-next/blob/master/Julia/Images/fractal.png)
-![J2](https://github.com/JaredWogan/Fractals-next/blob/master/Julia/Images/fractal1.png)
-![J3](https://github.com/JaredWogan/Fractals-next/blob/master/Julia/Images/fractal2.png)
