@@ -78,10 +78,6 @@ class Viewport:
     yrange: float = 1.5
     zoom: float = 1.0
 
-    @property
-    def offset(self: Viewport) -> complex:
-        return complex(self.xcenter, self.ycenter)
-
     def __iter__(self):
         for y in range(self.image.height):
             for x in range(self.image.width):
@@ -102,7 +98,6 @@ class Pixel:
         self.viewport.image.putpixel((self.x, self.y), value)
 
     def __complex__(self: Pixel):
-        # return complex(self.x, -self.y) * self.viewport.scale + self.viewport.offset
         w = self.viewport.image.width
         h = self.viewport.image.height
         zoom = self.viewport.zoom

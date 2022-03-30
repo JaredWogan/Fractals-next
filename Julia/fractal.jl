@@ -1,163 +1,175 @@
-using Distributed
-using ArgParse
-using ProgressMeter
-using Colors
-using Images
-using ImageInTerminal
-@everywhere using DataStructures
+using PyPlot, Colors, DataStructures, Dates, Images
 
-@everywhere include("./function.jl")
 
-function parse_commandline()
-    s = ArgParseSettings()
+struct Fractal
+    func::Function
+    param::Union{Int, Float64, Complex}
+    div::Union{Int, Float64}
+    max_iters::Int
+    coord_z0::Bool
+end
 
-    @add_arg_table s begin
-        "--w"
-            help = "Width of the image"
-            arg_type = Int
-            default = 1920
-        "--h"
-            help = "Height of the image"
-            arg_type = Int
-            default = 1080
-        "--x"
-            help = "Center X coordinate of the image"
-            arg_type = Float64
-            default = 0.0
-        "--y"
-            help = "Center Y coordinate of the image"
-            arg_type = Float64
-            default = 0.0
-        "--xrange"
-            help = "Range of the X coordinate"
-            arg_type = Float64
-            default = 1.5
-        "--yrange"
-            help = "Range of the Y coordinate"
-            arg_type = Float64
-            default = 1.0
-        "--zoom"
-            help = "Zoom level"
-            arg_type = Float64
-            default = 1.0
-        "--maxiters"
-            help = "Maximum number of iterations to determine divergence / convergence"
-            arg_type = Int
-            default = 1000
-        "--preal"
-            help = "Real part of the added constant"
-            arg_type = Float64
-            default = 0.0
-        "--pimag"
-            help = "Imaginary part of the added constant"
-            arg_type = Float64
-            default = 0.0
-        "--d"
-            help = "Divergence condition"
-            arg_type = Float64
-            default = 10.0
-        "--c"
-            help = "Convergence condition"
-            arg_type = Float64
-            default = 10^(-5)
-        "--coordz0"
-            help = "Z coordinate is taken as z0 for iterative fractals"
-            action = :store_true
-        "--k"
-            help = "K period index"
-            arg_type = Int
-            default = 2
-        "--n"
-            help = "Number of regions to divide canvas into"
-            arg_type = Int
-            default = 2
+function f(
+    fractal::Fractal,
+    z::Complex,
+    f_cache::AbstractDict,
+    iter::Int,
+    param::Union{Int, Float64, Complex}
+)
+    try
+        return fractal.func(z, f_cache, iter, param)
+    catch e
+        println("Error in f: $e")
+        return fractal.div + 1
     end
-
-    return parse_args(s)
 end
 
-@everywhere function pixel_to_coord(i, j)
-    return complex(
-        2*(i / w - 0.5) * (range_x / zoom) + move_x,
-        2*(j / h - 0.5) * (-range_y / zoom) + move_y
-    )
+function stability(
+    fractal::Fractal,
+    z::Complex,
+    coord_z0::Bool = false,
+    smooth::Bool = false,
+    clamp::Bool = true
+)
+    value = escape_count(fractal, z, coord_z0, smooth) / fractal.max_iters
+    return clamp ? max(0, min(1, value)) : value
 end
 
-@everywhere function process_pixel((i, j))
-    z = pixel_to_coord(i, j)
-    if coord_z0
-        z_cache = DefaultDict(0, 0 => z)
+function escape_count(
+    fractal::Fractal,
+    z::Complex,
+    coord_z0::Bool = false,
+    smooth::Bool = false
+)
+    f_cache = DefaultDict(0, coord_z0 ? 0 => z : 0 => fractal.param)
+    for iters=1:fractal.max_iters
+        if !haskey(f_cache, iters)
+            f_cache[iters] = f(fractal, z, f_cache, iters, fractal.param)
+        end
+        current_f = f_cache[iters]
+        if abs(current_f) > fractal.div
+            return smooth ? iters + 1 - log(log(abs(current_f))) / log(2) : iters
+        end
+    end
+    return fractal.max_iters
+end
+
+struct Viewport
+    image::Array{RGB, 2}
+    xcenter::Union{Int, Float64}
+    ycenter::Union{Int, Float64}
+    xrange::Union{Int, Float64}
+    yrange::Union{Int, Float64}
+    zoom::Union{Int, Float64}
+end
+
+function Base.iterate(View::Viewport, state=1)
+    h = size(View.image, 1)
+    w = size(View.image, 2)
+    if state > w * h
+        return nothing
     else
-        z_cache = DefaultDict(0, 0 => param)
+        row = Int(((state - 1 - ((state - 1) % w)) / w)) + 1
+        col = state - (row - 1) * w
+        return (Pixel(View, row, col), state + 1)
     end
-    # Check for divergence
-    for iters=1:max_iters
-        if !haskey(z_cache, iters)
-            z_cache[iters] = f(z, iters, z_cache, param)
-        end
-        z = z_cache[iters]
-        if abs(z) > divergence
-            return ((i, j), iters, 1)
-        end
-    end
-    # The above loop didn't return, so we reached the iteration limit
-    # Now we check for convergence
-    # Check for convergence
-    for iters=0:(max_iters-k)
-        z2 = z_cache[iters + k]
-        z1 = z_cache[iters]
-        if abs(z2 - z1) < convergence
-            return ((i, j), iters, 2)
-        end
-    end
-    return ((i, j), max_iters, 3)
 end
 
-function main()
-    parsed_args = parse_commandline()
-
-    @everywhere w, h = $parsed_args["w"], $parsed_args["h"]
-    @everywhere move_x, move_y = $parsed_args["x"], $parsed_args["y"]
-    @everywhere range_x, range_y = $parsed_args["xrange"], $parsed_args["yrange"]
-    @everywhere zoom = $parsed_args["zoom"]
-    @everywhere param = complex($parsed_args["preal"], $parsed_args["pimag"])
-    @everywhere max_iters, divergence = $parsed_args["maxiters"], $parsed_args["d"]
-    @everywhere coord_z0 = $parsed_args["coordz0"]
-    @everywhere k, convergence = $parsed_args["k"], $parsed_args["c"]
-    @everywhere n = $parsed_args["n"]
-
-    for (key, arg) in parsed_args
-        println("$key => $arg")
-    end
-
-    ij_grid = [(i, j) for i in 1:w for j in 1:h]
-
-    results = fetch(@showprogress "Generating Fractal..." pmap(process_pixel, ij_grid))
-
-    pixels = colour_fractal(results, n)
-
-    # min_max_regions = [
-    #     (
-    #         min_region_1 = minimum(x->x[3] == 1 && x[2], results),
-    #         max_region_1 = maximum(x->x[3] == 1 && x[2], results)
-    #     ),
-    #     (
-    #         min_region_2 = minimum(x->x[3] == 2 && x[2], results),
-    #         max_region_2 = maximum(x->x[3] == 2 && x[2], results)
-    #     ),
-    #     (
-    #         min_region_3 = minimum(x->x[3] == 3 && x[2], results),
-    #         max_region_3 = maximum(x->x[3] == 3 && x[2], results)
-    #     )
-    # ]
-
-    # pixels = zeros(RGB, h, w)
-    # for ((i, j), k, region) in results
-    #     pixels[j, i] = colour_map(k, region, min_max_regions)
-    # end
-
-    save("fractal.png", pixels)
+function Base.length(View::Viewport)
+    return size(View.image, 1) * size(View.image, 2)
 end
 
-@time main()
-display(load("fractal.png"))
+struct Pixel
+    viewport::Viewport
+    x::Int
+    y::Int
+end
+
+function coord(
+    pixel::Pixel
+)
+    h = size(pixel.viewport.image, 1)
+    w = size(pixel.viewport.image, 2)
+    zoom = pixel.viewport.zoom
+    xrange = pixel.viewport.xrange
+    yrange = pixel.viewport.yrange
+    xcenter = pixel.viewport.xcenter
+    ycenter = pixel.viewport.ycenter
+    value = complex(
+        (xrange * ((pixel.x - w/2) / (0.5 * zoom * w)) + xcenter),
+        (yrange * ((pixel.y - h/2) / (0.5 * zoom * h)) - ycenter)
+    )
+    return value
+end
+
+function color(
+    pixel::Pixel,
+    value::RGB
+)
+    pixel.viewport.image[pixel.y, pixel.x] = value
+    return nothing
+end
+
+function gen_fractal(;
+    func::Function,
+    param::Union{Int, Float64, Complex} = 0,
+    savedir::Union{Nothing, String} = nothing,
+    w::Int = 1920,
+    h::Int = 1080,
+    xrange::Union{Int, Float64} = 1.5,
+    yrange::Union{Int, Float64} = 1.5,
+    xcenter::Union{Int, Float64} = 0,
+    ycenter::Union{Int, Float64} = 0,
+    zoom::Union{Int, Float64} = 1,
+    div::Union{Int, Float64} = 1000,
+    max_iters::Int = 20,
+    coord_z0::Bool = true,
+    cmap::String = "twilight",
+    invert_cmap::Bool = false
+)
+    # Configure the file name to save the image to
+    date = Dates.format(Dates.now(), "yyyy-mm-dd at HH-MM-SS")
+    if savedir === nothing
+        savename = "./Fractal - " * date * ".png"
+    else
+        savename = savedir * "/Fractal - " * date * ".png"
+    end
+
+    # Create a blank image
+    image = zeros(RGB, h, w)
+
+    # Create a fractal object
+    fractal = Fractal(
+        func,
+        param,
+        div,
+        max_iters,
+        coord_z0
+    )
+
+    # Configure the viewport
+    viewport = Viewport(
+        image,
+        xcenter,
+        ycenter,
+        xrange,
+        yrange,
+        zoom
+    )
+
+    # Get the colourmap
+    colourmap = [
+        RGB(Tuple(get_cmap(cmap)(invert_cmap ? 1 - i : i)[1:3])...)
+        for i in 0:1:256
+    ]
+   
+    # Paint the fractal
+    for pixel in viewport
+        s = stability(fractal, coord(pixel), coord_z0, true, true)
+        index = round(Int, min(s * length(colourmap), length(colourmap) - 1))
+        color(pixel, colourmap[(index % length(colourmap)) + 1])
+    end
+
+    save(savename, image)
+    return image
+end
