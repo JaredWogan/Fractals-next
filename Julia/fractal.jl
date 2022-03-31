@@ -13,11 +13,11 @@ function f(
     fractal::Fractal,
     z::Complex,
     f_cache::AbstractDict,
-    iter::Int,
+    iters::Int,
     param::Union{Int, Float64, Complex}
 )
     try
-        return fractal.func(z, f_cache, iter, param)
+        return fractal.func(z, f_cache, iters, param)
     catch e
         println("Error in f: $e")
         return fractal.div + 1
@@ -110,6 +110,55 @@ function color(
     return nothing
 end
 
+"""
+    gen_fractal(;
+        func::Function,
+        param::Union{Int, Float64, Complex} = 0,
+        savedir::Union{Nothing, String} = nothing,
+        w::Int = 1920,
+        h::Int = 1080,
+        xrange::Union{Int, Float64} = 1.5,
+        yrange::Union{Int, Float64} = 1.5,
+        xcenter::Union{Int, Float64} = 0,
+        ycenter::Union{Int, Float64} = 0,
+        zoom::Union{Int, Float64} = 1,
+        div::Union{Int, Float64} = 1000,
+        max_iters::Int = 20,
+        coord_z0::Bool = true,
+        cmap::String = "twilight",
+        invert_cmap::Bool = false
+    )
+
+`func`: The function to use to generate the fractal.
+    
+`param`: A complex value, either used as a seed or in `func`. If `coord_z0` is `True`, then `param` is passed as the 4th argument to `func`.
+
+`savedir`: The directory to save the fractal to.
+
+`w`: The width of the image in pixels.
+
+`h`: The height of the image in pixels,
+
+`xrange`: Half the range of the x-axis.
+
+`yrange`: Half the range of the y-axis.
+
+`xcenter`: The center of the x-axis.
+
+`ycenter`: The center of the y-axis.
+
+`zoom`: How much to zoom in on the center of the fractal.
+
+`div`: The divergence condition.
+
+`max_iters`: The maximum number of iterations to run while checking for divergence.
+
+`coord_z0`: True -> Seed each iteration with the current coordinate in the complex plane. False -> Seed each iteration with `param`.
+
+`cmap`: The colour map to use when colouring the fractal.
+
+`invert_cmap`: Whether to invert the colour map.
+"""
 function gen_fractal(;
     func::Function,
     param::Union{Int, Float64, Complex} = 0,

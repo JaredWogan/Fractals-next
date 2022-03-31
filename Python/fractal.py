@@ -26,19 +26,13 @@ class Fractal:
         self: Fractal, 
         z: complex, 
         f_cache: Dict[int, complex], 
-        iter: int, 
+        iters: int, 
         param: int | float | complex
     ):
         try:
-            return self.func(z, f_cache, iter, param)
+            return self.func(z, f_cache, iters, param)
         except (OverflowError, ZeroDivisionError):
             return self.div + 1
-
-    def __contains__(
-        self: Fractal,
-        z: complex
-    ) -> bool:
-        return self.stability(z) == 1
 
     def stability(
         self: Fractal,
@@ -59,14 +53,14 @@ class Fractal:
             f_cache[0] = z
         else:
             f_cache[0] = self.param
-        for iter in range(1, self.max_iters):
-            if not iter in f_cache:
-                f_cache[iter] = self.f(z, f_cache, iter, self.param)
-            f = f_cache[iter]
+        for iters in range(1, self.max_iters):
+            if not iters in f_cache:
+                f_cache[iters] = self.f(z, f_cache, iters, self.param)
+            f = f_cache[iters]
             if abs(f) > self.div:
                 if smooth:
-                    return iter + 1 - log(log(abs(f))) / log(2)
-                return iter
+                    return iters + 1 - log(log(abs(f))) / log(2)
+                return iters
         return self.max_iters
 
 @dataclass
@@ -128,6 +122,37 @@ def gen_fractal(
     cmap: str = "twilight",
     invert_cmap: bool = False
 ) -> None:
+    """
+    `func`: The function to use to generate the fractal.
+    
+    `param`: A complex value, either used as a seed or in `func`. If `coord_z0` is `True`, then `param` is passed as the 4th argument to `func`.
+    
+    `savedir`: The directory to save the fractal to.
+    
+    `w`: The width of the image in pixels.
+    
+    `h`: The height of the image in pixels,
+    
+    `xrange`: Half the range of the x-axis.
+    
+    `yrange`: Half the range of the y-axis.
+    
+    `xcenter`: The center of the x-axis.
+    
+    `ycenter`: The center of the y-axis.
+    
+    `zoom`: How much to zoom in on the center of the fractal.
+    
+    `div`: The divergence condition.
+    
+    `max_iters`: The maximum number of iterations to run while checking for divergence.
+    
+    `coord_z0`: True -> Seed each iteration with the current coordinate in the complex plane. False -> Seed each iteration with `param`.
+    
+    `cmap`: The colour map to use when colouring the fractal.
+    
+    `invert_cmap`: Whether to invert the colour map.
+    """
     # Configure the file name to save
     date = datetime.now().strftime(r"%Y-%m-%d at %H-%M-%S")
     if not savedir:
@@ -179,6 +204,9 @@ def gen_fractal(
 
 
 def get_cmaps():
+    """
+    Displays all available colour maps.
+    """
     cmaps = [('Perceptually Uniform Sequential', [
             'viridis', 'plasma', 'inferno', 'magma', 'cividis']),
          ('Sequential', [
